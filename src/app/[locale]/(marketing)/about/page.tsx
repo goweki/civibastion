@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { AboutPage } from "@/components/marketing/AboutPage";
+import { LocaleFallback } from "@/components/locale/LocaleFallback";
 import { isLocale } from "@/lib/i18n";
 import { notFound } from "next/navigation";
 
@@ -15,7 +17,19 @@ export async function generateMetadata({
     : { title: "Our purpose", description: "Learn about CiviBastion's purpose." };
 }
 
-export default async function Page({
+export default function Page({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  return (
+    <Suspense fallback={<LocaleFallback />}>
+      <LocalizedAboutPage params={params} />
+    </Suspense>
+  );
+}
+
+async function LocalizedAboutPage({
   params,
 }: {
   params: Promise<{ locale: string }>;

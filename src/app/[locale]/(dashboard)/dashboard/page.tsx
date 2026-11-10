@@ -1,11 +1,10 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { signOutFromApp } from "@/app/actions/auth";
-import { isLocale } from "@/lib/i18n";
-import { notFound } from "next/navigation";
+import { isLocale, type Locale } from "@/lib/i18n";
 
 const messages = {
   en: {
@@ -41,7 +40,19 @@ const messages = {
   }
 >;
 
-export default async function DashboardPage({
+export default function DashboardPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  return (
+    <Suspense fallback={<DashboardFallback />}>
+      <LocalizedDashboard params={params} />
+    </Suspense>
+  );
+}
+
+async function LocalizedDashboard({
   params,
 }: {
   params: Promise<{ locale: string }>;
@@ -54,20 +65,28 @@ export default async function DashboardPage({
 
   return (
     <Suspense
-      fallback={
-        <main className="grid min-h-screen place-items-center bg-background px-5">
-          <p className="text-sm text-muted-foreground">
-            {routeLocale === "en" ? "Loading your workspace…" : "Inapakia eneo lako la kazi…"}
-          </p>
-        </main>
-      }
+      fallback={<DashboardFallback locale={routeLocale} />}
     >
       <AuthenticatedDashboard locale={routeLocale} />
     </Suspense>
   );
 }
 
-async function AuthenticatedDashboard({ locale }: { locale: "en" | "sw" }) {
+function DashboardFallback({ locale }: { locale?: Locale }) {
+  return (
+    <main className="grid min-h-screen place-items-center bg-background px-5">
+      <p className="text-sm text-muted-foreground" role="status">
+        {locale === "sw"
+          ? "Inapakia eneo lako la kazi…"
+          : locale === "en"
+            ? "Loading your workspace…"
+            : "Loading… / Inapakia…"}
+      </p>
+    </main>
+  );
+}
+
+async function AuthenticatedDashboard({ locale }: { locale: Locale }) {
   const session = await auth();
 
   if (!session?.user) {
