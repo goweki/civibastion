@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CiviBastion
 
-## Getting Started
+Open security infrastructure for organizations that operate their own AI
+systems. The current application includes a bilingual public site and
+Google-based Auth.js sign-in using encrypted JWT sessions.
 
-First, run the development server:
+## Local development
 
 ```bash
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). The root route redirects
+to `/en`; the site also supports `/sw`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Configure Google sign-in
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a Google OAuth 2.0 web client and add this authorized redirect URI:
 
-## Learn More
+```text
+http://localhost:3000/api/auth/callback/google
+```
 
-To learn more about Next.js, take a look at the following resources:
+Set these values in `.env.local`:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```text
+AUTH_SECRET=<a unique random secret>
+AUTH_GOOGLE_ID=<Google OAuth client ID>
+AUTH_GOOGLE_SECRET=<Google OAuth client secret>
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Generate a secret locally, for example with `openssl rand -base64 32`. Do not
+commit `.env.local` or share its values. Set the production redirect URI to
+`https://<your-domain>/api/auth/callback/google` in the Google client and use a
+separate production secret. Self-hosted deployments behind a reverse proxy
+should set `AUTH_TRUST_HOST=true` only when that proxy validates and sets host
+headers. Set `NEXT_PUBLIC_SITE_URL` to the canonical HTTPS origin in production
+so generated social preview URLs use the correct host.
 
-## Deploy on Vercel
+The initial Auth.js setup uses Google OAuth and JWT sessions. It does not use a
+database adapter and does not persist Auth.js users, linked accounts, or
+sessions. The session exposes the provider's stable user subject as `user.id`;
+application-level organization membership and user records still need to be
+implemented before connecting protected product data.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Quality checks
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+## Project documents
+
+Working product and engineering specifications, including the brand guide, are
+maintained under the ignored `local/docs/` directory. Those documents are
+intentionally local and are not included in normal Git commits.
