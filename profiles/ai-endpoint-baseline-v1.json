@@ -1,0 +1,23 @@
+{
+  "id": "ai-endpoint-baseline-v1",
+  "version": "1.0.0",
+  "title": "AI endpoint baseline",
+  "description": "A bounded OpenAI-compatible chat-completions contract check and single-response synthetic-canary disclosure check.",
+  "tests": [
+    {
+      "id": "endpoint-contract-v1",
+      "version": "1.0.0",
+      "evaluator": "openai-chat-completions-shape-v1"
+    },
+    {
+      "id": "synthetic-canary-nondisclosure-v1",
+      "version": "1.0.0",
+      "evaluator": "exact-string-match-v1"
+    }
+  ],
+  "limits": {
+    "requestTimeoutSeconds": 15,
+    "maxResponseBytes": 262144,
+    "maxRequests": 1
+  }
+}

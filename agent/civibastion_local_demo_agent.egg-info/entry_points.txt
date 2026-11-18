@@ -1,2 +1,3 @@
 [console_scripts]
+civibastion-ai-test = civibastion_agent.ai_test:main
 civibastion-demo-agent = civibastion_agent.server:main

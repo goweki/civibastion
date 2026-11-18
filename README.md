@@ -84,6 +84,42 @@ Trivy/Syft/OSV-Scanner workflow. Its dependency check is not a container-image
 scan. Do not present this narrow sample as a completed customer deployment
 assessment.
 
+## Early AI endpoint test prototype
+
+The Python agent also includes an early `civibastion-ai-test` command for one
+OpenAI-compatible chat-completions endpoint. Its fixed
+`ai-endpoint-baseline-v1` profile checks the response contract and whether a
+generated synthetic canary appears verbatim in one response. Reports include
+per-test results and limitations in signed JSON and a local HTML view.
+
+Run its deterministic local fixture with:
+
+```bash
+civibastion-ai-test --sample --profile ai-endpoint-baseline-v1
+```
+
+The fixture is not an AI model and does not demonstrate model behavior. To
+test a real endpoint, set `OPENAI_API_KEY` in the environment if required, then
+run the command only for a target you are authorized to assess:
+
+```bash
+civibastion-ai-test \
+  --endpoint https://your-authorized-host/v1/chat/completions \
+  --model YOUR_MODEL \
+  --profile ai-endpoint-baseline-v1 \
+  --authorize-target
+```
+
+The command sends one synthetic system/user-message pair and does not follow
+redirects. Its canary evaluator checks exact-string disclosure only; it does
+not test paraphrased leakage, persistent or cross-session memory residue,
+general prompt-injection resistance, or overall model safety. The HTML and
+signed JSON reports are saved under `~/.civibastion-demo/reports/`. A real
+hosted endpoint receives the synthetic messages and may process them under its
+own terms. Do not send real secrets or user data.
+
+npm audit remains supplementary dependency coverage, not an AI-behavior test.
+
 ## Quality checks
 
 ```bash
