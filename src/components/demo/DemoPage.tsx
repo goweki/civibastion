@@ -15,6 +15,7 @@ const agentStatusSchema = z.object({
   targets: z.array(z.object({ variant: z.string(), port: z.number() })),
 });
 
+// Preserve unknown server fields because report verification covers the original payload.
 const reportSchema = z.object({
   schemaVersion: z.string(),
   assessmentId: z.string(),
@@ -22,19 +23,19 @@ const reportSchema = z.object({
     id: z.string(),
     version: z.string(),
     checks: z.array(z.string()),
-  }),
+  }).passthrough(),
   target: z.object({
     name: z.string(),
     variant: z.enum(["baseline", "patched"]),
     scope: z.array(z.string()),
-  }),
+  }).passthrough(),
   execution: z.object({
     startedAt: z.string(),
     completedAt: z.string(),
     agentVersion: z.string(),
     npmVersion: z.string(),
     nodeVersion: z.string(),
-  }),
+  }).passthrough(),
   checks: z.array(
     z.object({
       id: z.string(),
@@ -53,9 +54,9 @@ const reportSchema = z.object({
                   z.object({
                     title: z.string().optional(),
                     url: z.string().optional(),
-                  }),
+                  }).passthrough(),
                 ),
-              }),
+              }).passthrough(),
             )
             .optional(),
           componentCount: z.number().optional(),
@@ -65,9 +66,9 @@ const reportSchema = z.object({
           file: z.string().optional(),
           database: z.string().optional(),
           truncated: z.boolean().optional(),
-        })
+        }).passthrough()
         .optional(),
-    }),
+    }).passthrough(),
   ),
   limitations: z.array(z.string()),
   integrity: z.object({
@@ -75,8 +76,8 @@ const reportSchema = z.object({
     digest: z.string(),
     publicKey: z.string(),
     signature: z.string(),
-  }),
-});
+  }).passthrough(),
+}).passthrough();
 
 const runResponseSchema = z.object({ report: reportSchema });
 const verifyResponseSchema = z.object({
