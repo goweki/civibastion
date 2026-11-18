@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,8 @@ VARIANTS = {
 
 def load_profile() -> dict[str, Any]:
     try:
-        profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+        raw_profile = PROFILE_PATH.read_bytes()
+        profile = json.loads(raw_profile)
     except (OSError, json.JSONDecodeError) as error:
         raise RuntimeError(f"Could not load the bundled assessment profile: {error}") from error
 
@@ -36,15 +38,17 @@ def load_profile() -> dict[str, Any]:
         profile.get("id") != PROFILE_ID
         or profile.get("targetKind") != "bundled-demo-service"
         or not isinstance(checks, list)
-        or not checks
         or any(not isinstance(check, str) or check not in ALLOWED_CHECKS for check in checks)
+        or len(checks) != len(ALLOWED_CHECKS)
+        or set(checks) != ALLOWED_CHECKS
         or not isinstance(limits, dict)
-        or not isinstance(limits.get("requestTimeoutSeconds"), int)
+        or type(limits.get("requestTimeoutSeconds")) is not int
         or not 1 <= limits["requestTimeoutSeconds"] <= 10
-        or not isinstance(limits.get("scannerTimeoutSeconds"), int)
+        or type(limits.get("scannerTimeoutSeconds")) is not int
         or not 1 <= limits["scannerTimeoutSeconds"] <= 120
         or limits.get("maxOutputBytes") != 1_048_576
     ):
         raise RuntimeError("The bundled assessment profile is invalid or contains an unapproved check.")
 
+    profile["sha256"] = hashlib.sha256(raw_profile).hexdigest()
     return profile

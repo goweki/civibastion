@@ -1,7 +1,9 @@
+import hashlib
 import json
 import os
 import shutil
 import subprocess
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -19,6 +21,78 @@ from .report import (
 
 MAX_OUTPUT_BYTES = 1_048_576
 MAX_FINDINGS = 50
+
+
+def _run_bounded(
+    command: list[str],
+    directory: Path,
+    environment: dict[str, str],
+    timeout: int,
+) -> tuple[int, str, str] | str:
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=directory,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+        )
+    except OSError as error:
+        return f"Could not start the approved tool: {error}"
+
+    output = {"stdout": bytearray(), "stderr": bytearray()}
+    output_size = 0
+    output_too_large = threading.Event()
+    output_lock = threading.Lock()
+
+    def collect(name: str, stream) -> None:
+        nonlocal output_size
+        try:
+            while True:
+                chunk = stream.read(4096)
+                if not chunk:
+                    return
+                with output_lock:
+                    remaining = MAX_OUTPUT_BYTES - output_size
+                    if len(chunk) > remaining:
+                        output[name].extend(chunk[:remaining])
+                        output_size = MAX_OUTPUT_BYTES
+                        output_too_large.set()
+                        if process.poll() is None:
+                            process.terminate()
+                    elif not output_too_large.is_set():
+                        output[name].extend(chunk)
+                        output_size += len(chunk)
+        except OSError:
+            return
+
+    readers = [
+        threading.Thread(target=collect, args=("stdout", process.stdout), daemon=True),
+        threading.Thread(target=collect, args=("stderr", process.stderr), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+
+    try:
+        return_code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        for reader in readers:
+            reader.join()
+        return f"The approved tool exceeded the {timeout}-second time limit."
+
+    for reader in readers:
+        reader.join()
+    if output_too_large.is_set():
+        return f"The approved tool output exceeded the {MAX_OUTPUT_BYTES}-byte limit."
+
+    return (
+        return_code,
+        output["stdout"].decode("utf-8", errors="replace"),
+        output["stderr"].decode("utf-8", errors="replace"),
+    )
 
 
 def _request_health(port: int, timeout: int) -> tuple[int, dict[str, str], bytes]:
@@ -70,72 +144,79 @@ def _audit_dependencies(directory: Path, timeout: int) -> dict[str, Any]:
         "npm_config_fund": "false",
         "npm_config_update_notifier": "false",
     }
-    try:
-        completed = subprocess.run(
-            [npm, "audit", "--json", "--omit=dev", "--no-fund", "--no-progress"],
-            cwd=directory,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
+    execution = _run_bounded(
+        [npm, "audit", "--json", "--omit=dev", "--no-fund", "--no-progress"],
+        directory,
+        environment,
+        timeout,
+    )
+    if isinstance(execution, str):
         return _result(
             "dependency-advisories-v1",
             "error",
-            f"npm audit exceeded the {timeout}-second time limit.",
+            execution,
         )
-    except OSError as error:
-        return _result("dependency-advisories-v1", "error", f"Could not start npm audit: {error}")
-
-    if len(completed.stdout.encode("utf-8")) > MAX_OUTPUT_BYTES:
-        return _result(
-            "dependency-advisories-v1",
-            "error",
-            "npm audit output exceeded the 1 MiB limit.",
-        )
+    return_code, stdout, stderr = execution
     try:
-        audit = json.loads(completed.stdout)
+        audit = json.loads(stdout)
     except json.JSONDecodeError:
-        detail = completed.stderr.strip()[:500] or "npm returned malformed JSON."
+        detail = stderr.strip()[:500] or "npm returned malformed JSON."
         return _result("dependency-advisories-v1", "error", detail)
+    if not isinstance(audit, dict):
+        return _result("dependency-advisories-v1", "error", "npm audit returned a non-object result.")
 
-    metadata = audit.get("metadata", {}).get("vulnerabilities", {})
+    if return_code not in (0, 1):
+        return _result("dependency-advisories-v1", "error", stderr.strip()[:500] or "npm audit failed.")
+    audit_metadata = audit.get("metadata")
+    if not isinstance(audit_metadata, dict):
+        return _result("dependency-advisories-v1", "error", "npm audit metadata is missing.")
+    metadata = audit_metadata.get("vulnerabilities")
     if not isinstance(metadata, dict):
         return _result(
             "dependency-advisories-v1",
             "error",
             "npm audit returned a result with an invalid vulnerability summary.",
         )
+    counts: dict[str, int] = {}
+    for severity in ("critical", "high", "moderate", "low", "info"):
+        count = metadata.get(severity, 0)
+        if type(count) is not int or count < 0:
+            return _result(
+                "dependency-advisories-v1",
+                "error",
+                "npm audit returned an invalid vulnerability count.",
+            )
+        counts[severity] = count
     total = sum(
-        int(metadata.get(severity, 0) or 0)
-        for severity in ("critical", "high", "moderate", "low", "info")
+        counts.values()
     )
     vulnerabilities = audit.get("vulnerabilities", {})
+    if not isinstance(vulnerabilities, dict):
+        return _result("dependency-advisories-v1", "error", "npm audit findings are malformed.")
     findings = []
-    if isinstance(vulnerabilities, dict):
-        for name, item in list(vulnerabilities.items())[:MAX_FINDINGS]:
-            if not isinstance(item, dict):
-                continue
-            via = item.get("via", [])
-            references = [
-                {
-                    "title": reference.get("title"),
-                    "url": reference.get("url"),
-                }
-                for reference in via
-                if isinstance(reference, dict)
-            ]
-            findings.append(
-                {
-                    "package": name,
-                    "severity": item.get("severity", "unknown"),
-                    "range": item.get("range"),
-                    "direct": bool(item.get("isDirect")),
-                    "references": references[:5],
-                }
-            )
+    for name, item in list(vulnerabilities.items())[:MAX_FINDINGS]:
+        if not isinstance(item, dict):
+            return _result("dependency-advisories-v1", "error", "npm audit returned malformed findings.")
+        via = item.get("via", [])
+        if not isinstance(via, list):
+            return _result("dependency-advisories-v1", "error", "npm audit returned malformed references.")
+        references = [
+            {
+                "title": reference.get("title"),
+                "url": reference.get("url"),
+            }
+            for reference in via
+            if isinstance(reference, dict)
+        ]
+        findings.append(
+            {
+                "package": name,
+                "severity": item.get("severity", "unknown"),
+                "range": item.get("range"),
+                "direct": bool(item.get("isDirect")),
+                "references": references[:5],
+            }
+        )
 
     status = "fail" if total else "pass"
     return _result(
@@ -143,14 +224,9 @@ def _audit_dependencies(directory: Path, timeout: int) -> dict[str, Any]:
         status,
         f"npm audit reported {total} known vulnerable package(s).",
         {
-            "counts": {
-                severity: int(metadata.get(severity, 0) or 0)
-                for severity in ("critical", "high", "moderate", "low", "info")
-            },
+            "counts": counts,
             "findings": findings,
-            "truncated": len(vulnerabilities) > MAX_FINDINGS
-            if isinstance(vulnerabilities, dict)
-            else False,
+            "truncated": len(vulnerabilities) > MAX_FINDINGS,
             "database": "npm registry audit endpoint",
         },
     )
@@ -169,38 +245,32 @@ def _generate_sbom(directory: Path, timeout: int, assessment_id: str) -> dict[st
         "npm_config_globalconfig": os.devnull,
         "npm_config_update_notifier": "false",
     }
-    try:
-        completed = subprocess.run(
-            [
-                npm,
-                "sbom",
-                "--package-lock-only",
-                "--sbom-format",
-                "cyclonedx",
-                "--omit=dev",
-            ],
-            cwd=directory,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return _result("cyclonedx-sbom-v1", "error", f"SBOM generation exceeded {timeout} seconds.")
-    except OSError as error:
-        return _result("cyclonedx-sbom-v1", "error", f"Could not start npm SBOM generation: {error}")
-
-    if completed.returncode != 0:
-        detail = completed.stderr.strip()[:500] or "npm SBOM generation failed."
+    execution = _run_bounded(
+        [
+            npm,
+            "sbom",
+            "--package-lock-only",
+            "--sbom-format",
+            "cyclonedx",
+            "--omit=dev",
+        ],
+        directory,
+        environment,
+        timeout,
+    )
+    if isinstance(execution, str):
+        return _result("cyclonedx-sbom-v1", "error", execution)
+    return_code, stdout, stderr = execution
+    if return_code != 0:
+        detail = stderr.strip()[:500] or "npm SBOM generation failed."
         return _result("cyclonedx-sbom-v1", "error", detail)
-    if len(completed.stdout.encode("utf-8")) > MAX_OUTPUT_BYTES:
-        return _result("cyclonedx-sbom-v1", "error", "SBOM output exceeded the 1 MiB limit.")
     try:
-        sbom = json.loads(completed.stdout)
+        sbom = json.loads(stdout)
     except json.JSONDecodeError:
         return _result("cyclonedx-sbom-v1", "error", "npm returned malformed CycloneDX JSON.")
 
+    if not isinstance(sbom, dict):
+        return _result("cyclonedx-sbom-v1", "error", "npm returned a non-object SBOM.")
     components = sbom.get("components")
     if not isinstance(components, list):
         return _result("cyclonedx-sbom-v1", "error", "SBOM did not contain a components list.")
@@ -208,16 +278,18 @@ def _generate_sbom(directory: Path, timeout: int, assessment_id: str) -> dict[st
     report_dir = Path.home() / ".civibastion-demo" / "reports"
     ensure_private_directory(report_dir)
     sbom_path = report_dir / f"{assessment_id}.cdx.json"
+    sbom_content = json.dumps(sbom, sort_keys=True, separators=(",", ":")).encode("utf-8")
     descriptor = os.open(sbom_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as sbom_file:
-        json.dump(sbom, sbom_file, sort_keys=True, separators=(",", ":"))
+        sbom_file.write(sbom_content.decode("utf-8"))
     return _result(
         "cyclonedx-sbom-v1",
         "pass",
         f"Generated a CycloneDX SBOM with {len(components)} component(s).",
         {
             "componentCount": len(components),
-            "file": str(sbom_path),
+            "file": sbom_path.name,
+            "sha256": hashlib.sha256(sbom_content).hexdigest(),
         },
     )
 
@@ -315,6 +387,7 @@ def run_assessment(variant: str) -> dict[str, Any]:
         "profile": {
             "id": profile["id"],
             "version": profile["version"],
+            "sha256": profile["sha256"],
             "checks": profile["checks"],
         },
         "target": {
@@ -335,6 +408,7 @@ def run_assessment(variant: str) -> dict[str, Any]:
             "This demo assesses only the bundled local sample service and its npm lockfile.",
             "npm audit uses the npm registry audit database; this is not Trivy, Syft, or OSV-Scanner.",
             "A passing check is not a security certification and does not evaluate AI model behavior.",
+            "The embedded demo signing key is not independently trusted as an organizational identity.",
         ],
     }
     return sign_report(content)

@@ -2,56 +2,89 @@
 
 import { useEffect, useState } from "react";
 import { Check, CircleAlert, Download, LoaderCircle, Play, ShieldCheck } from "lucide-react";
+import { z } from "zod";
 import type { Locale } from "@/lib/i18n";
 
 type DemoVariant = "baseline" | "patched";
-type CheckStatus = "pass" | "fail" | "skipped" | "error";
 
-type AssessmentReport = {
-  schemaVersion: string;
-  assessmentId: string;
-  profile: { id: string; version: string };
-  target: { name: string; variant: DemoVariant; scope: string[] };
-  execution: {
-    startedAt: string;
-    completedAt: string;
-    agentVersion: string;
-    npmVersion: string;
-    nodeVersion: string;
-  };
-  checks: Array<{
-    id: string;
-    status: CheckStatus;
-    summary: string;
-    evidence?: {
-      counts?: Record<string, number>;
-      findings?: Array<{
-        package: string;
-        severity: string;
-        range?: string;
-        references: Array<{ title?: string; url?: string }>;
-      }>;
-      componentCount?: number;
-      missingOrIncorrect?: string[];
-      targetMode?: string;
-    };
-  }>;
-  limitations: string[];
-  integrity: {
-    algorithm: string;
-    digest: string;
-    publicKey: string;
-    signature: string;
-  };
-};
+const agentStatusSchema = z.object({
+  status: z.literal("ok"),
+  agentVersion: z.string(),
+  profile: z.object({ id: z.string(), version: z.string() }),
+  variants: z.array(z.string()),
+  targets: z.array(z.object({ variant: z.string(), port: z.number() })),
+});
 
-type AgentStatus = {
-  status: string;
-  agentVersion: string;
-  profile: { id: string; version: string };
-  variants: string[];
-  targets: Array<{ variant: string; port: number }>;
-};
+const reportSchema = z.object({
+  schemaVersion: z.string(),
+  assessmentId: z.string(),
+  profile: z.object({
+    id: z.string(),
+    version: z.string(),
+    checks: z.array(z.string()),
+  }),
+  target: z.object({
+    name: z.string(),
+    variant: z.enum(["baseline", "patched"]),
+    scope: z.array(z.string()),
+  }),
+  execution: z.object({
+    startedAt: z.string(),
+    completedAt: z.string(),
+    agentVersion: z.string(),
+    npmVersion: z.string(),
+    nodeVersion: z.string(),
+  }),
+  checks: z.array(
+    z.object({
+      id: z.string(),
+      status: z.enum(["pass", "fail", "skipped", "error"]),
+      summary: z.string(),
+      evidence: z
+        .object({
+          counts: z.record(z.string(), z.number()).optional(),
+          findings: z
+            .array(
+              z.object({
+                package: z.string(),
+                severity: z.string(),
+                range: z.string().optional(),
+                references: z.array(
+                  z.object({
+                    title: z.string().optional(),
+                    url: z.string().optional(),
+                  }),
+                ),
+              }),
+            )
+            .optional(),
+          componentCount: z.number().optional(),
+          missingOrIncorrect: z.array(z.string()).optional(),
+          targetMode: z.string().optional(),
+          file: z.string().optional(),
+          database: z.string().optional(),
+          truncated: z.boolean().optional(),
+        })
+        .optional(),
+    }),
+  ),
+  limitations: z.array(z.string()),
+  integrity: z.object({
+    algorithm: z.string(),
+    digest: z.string(),
+    publicKey: z.string(),
+    signature: z.string(),
+  }),
+});
+
+const runResponseSchema = z.object({ report: reportSchema });
+const verifyResponseSchema = z.object({
+  valid: z.boolean(),
+  reason: z.string().optional(),
+});
+
+type AssessmentReport = z.infer<typeof reportSchema>;
+type AgentStatus = z.infer<typeof agentStatusSchema>;
 
 const copy = {
   en: {
@@ -73,7 +106,8 @@ const copy = {
     agentOffline: "Local agent not connected",
     startAgent: "Start the agent and demo instructions",
     instruction: "From the repository root, install the agent requirements, then run:",
-    command: "python3 -m civibastion_agent.server",
+    command:
+      "python3 -m venv .venv-agent\nsource .venv-agent/bin/activate\npython -m pip install -e ./agent\npython -m civibastion_agent.server",
     result: "Assessment report",
     verify: "Verify signature",
     verifying: "Verifying…",
@@ -112,7 +146,8 @@ const copy = {
     agentOffline: "Wakala wa ndani hajaunganishwa",
     startAgent: "Maelekezo ya kuanzisha wakala na mfano",
     instruction: "Kutoka kwenye mzizi wa hazina, sakinisha mahitaji ya wakala kisha endesha:",
-    command: "python3 -m civibastion_agent.server",
+    command:
+      "python3 -m venv .venv-agent\nsource .venv-agent/bin/activate\npython -m pip install -e ./agent\npython -m civibastion_agent.server",
     result: "Ripoti ya tathmini",
     verify: "Thibitisha sahihi",
     verifying: "Inathibitisha…",
@@ -184,30 +219,42 @@ export function DemoPage({ locale }: DemoPageProps) {
   const [busy, setBusy] = useState<"run" | "verify" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function refreshStatus() {
-    try {
-      const response = await fetch("/api/demo", { cache: "no-store" });
-      const payload = (await response.json()) as AgentStatus | { error?: string };
-      if (!response.ok) {
-        setStatus(null);
-        setError("error" in payload ? payload.error ?? messages.agentOffline : messages.agentOffline);
-        return;
-      }
-      setStatus(payload as AgentStatus);
-      setError(null);
-    } catch {
-      setStatus(null);
-      setError(messages.agentOffline);
-    }
-  }
-
   useEffect(() => {
-    void refreshStatus();
-  }, []);
+    let active = true;
+    async function checkStatus() {
+      try {
+        const response = await fetch("/api/demo", { cache: "no-store" });
+        const payload: unknown = await response.json();
+        const parsed = agentStatusSchema.safeParse(payload);
+        if (!active) return;
+        if (!response.ok || !parsed.success) {
+          setStatus(null);
+          setError(
+            !parsed.success && typeof payload === "object" && payload !== null && "error" in payload
+              ? String(payload.error)
+              : messages.agentOffline,
+          );
+          return;
+        }
+        setStatus(parsed.data);
+        setError(null);
+      } catch {
+        if (!active) return;
+        setStatus(null);
+        setError(messages.agentOffline);
+      }
+    }
+
+    void checkStatus();
+    return () => {
+      active = false;
+    };
+  }, [messages.agentOffline]);
 
   async function runAssessment() {
     setBusy("run");
     setError(null);
+    setReport(null);
     setVerification(null);
     try {
       const response = await fetch("/api/demo", {
@@ -215,13 +262,16 @@ export function DemoPage({ locale }: DemoPageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "run", variant }),
       });
-      const payload = (await response.json()) as
-        | { report: AssessmentReport }
-        | { error: string };
-      if (!response.ok || !("report" in payload)) {
-        throw new Error("error" in payload ? payload.error : messages.copyFailure);
+      const payload: unknown = await response.json();
+      const parsed = runResponseSchema.safeParse(payload);
+      if (!response.ok || !parsed.success) {
+        const errorMessage =
+          typeof payload === "object" && payload !== null && "error" in payload
+            ? String(payload.error)
+            : messages.copyFailure;
+        throw new Error(errorMessage);
       }
-      setReport(payload.report);
+      setReport(parsed.data.report);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : messages.copyFailure);
     } finally {
@@ -239,12 +289,17 @@ export function DemoPage({ locale }: DemoPageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "verify", report }),
       });
-      const payload = (await response.json()) as { valid?: boolean; reason?: string; error?: string };
-      if (!response.ok || typeof payload.valid !== "boolean") {
-        throw new Error(payload.error ?? messages.copyFailure);
+      const payload: unknown = await response.json();
+      const parsed = verifyResponseSchema.safeParse(payload);
+      if (!response.ok || !parsed.success) {
+        const errorMessage =
+          typeof payload === "object" && payload !== null && "error" in payload
+            ? String(payload.error)
+            : messages.copyFailure;
+        throw new Error(errorMessage);
       }
-      setVerification(payload.valid);
-      if (!payload.valid) setError(payload.reason ?? messages.invalid);
+      setVerification(parsed.data.valid);
+      if (!parsed.data.valid) setError(parsed.data.reason ?? messages.invalid);
     } catch (caught) {
       setVerification(false);
       setError(caught instanceof Error ? caught.message : messages.copyFailure);

@@ -1,5 +1,5 @@
-const { createRequire } = require("node:module");
-const path = require("node:path");
+import { createRequire } from "node:module";
+import path from "node:path";
 
 const requireFromVariant = createRequire(path.join(process.cwd(), "package.json"));
 const express = requireFromVariant("express");
