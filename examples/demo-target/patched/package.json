@@ -1,0 +1,9 @@
+{
+  "name": "civibastion-demo-target-patched",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Patched isolated fixture for CiviBastion's local profile demo",
+  "dependencies": {
+    "express": "5.3.0"
+  }
+}

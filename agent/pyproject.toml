@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "civibastion-local-demo-agent"
+version = "0.1.0"
+description = "Local-only profile runner for the CiviBastion fellowship demo"
+requires-python = ">=3.10"
+dependencies = ["cryptography>=44,<47"]
+
+[project.scripts]
+civibastion-demo-agent = "civibastion_agent.server:main"
+civibastion-ai-test = "civibastion_agent.ai_test:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["civibastion_agent*"]
