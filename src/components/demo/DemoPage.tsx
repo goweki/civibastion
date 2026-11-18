@@ -59,6 +59,7 @@ const reportSchema = z.object({
             )
             .optional(),
           componentCount: z.number().optional(),
+          sha256: z.string().optional(),
           missingOrIncorrect: z.array(z.string()).optional(),
           targetMode: z.string().optional(),
           file: z.string().optional(),
@@ -387,9 +388,9 @@ export function DemoPage({ locale }: DemoPageProps) {
             <details className="mt-5 rounded-2xl bg-muted/70 p-4">
               <summary className="cursor-pointer text-sm font-semibold">{messages.startAgent}</summary>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">{messages.instruction}</p>
-              <code className="mt-2 block overflow-x-auto rounded-lg bg-background p-3 text-xs">
-                {messages.command}
-              </code>
+              <pre className="mt-2 overflow-x-auto rounded-lg bg-background p-3 text-xs">
+                <code>{messages.command}</code>
+              </pre>
             </details>
           )}
           <p className="mt-5 text-xs leading-5 text-muted-foreground">{messages.noImage}</p>

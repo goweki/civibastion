@@ -45,10 +45,33 @@ export async function POST(request: Request) {
     );
   }
 
-  const rawBody = await request.text();
-  if (new TextEncoder().encode(rawBody).byteLength > 1_048_576) {
-    return Response.json({ error: "Request body exceeds the 1 MiB limit." }, { status: 413 });
+  if (request.headers.get("content-type")?.split(";")[0] !== "application/json") {
+    return Response.json({ error: "Content-Type must be application/json." }, { status: 415 });
   }
+
+  const reader = request.body?.getReader();
+  if (!reader) {
+    return Response.json({ error: "A JSON request body is required." }, { status: 400 });
+  }
+  const chunks: Uint8Array[] = [];
+  let bodySize = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bodySize += value.byteLength;
+    if (bodySize > 1_048_576) {
+      await reader.cancel();
+      return Response.json({ error: "Request body exceeds the 1 MiB limit." }, { status: 413 });
+    }
+    chunks.push(value);
+  }
+  const bodyBytes = new Uint8Array(bodySize);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const rawBody = new TextDecoder().decode(bodyBytes);
 
   let input: unknown;
   try {

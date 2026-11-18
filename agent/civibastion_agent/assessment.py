@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import urllib.error
 import urllib.request
@@ -34,6 +35,7 @@ def _run_bounded(
             command,
             cwd=directory,
             env=environment,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,
@@ -95,6 +97,34 @@ def _run_bounded(
     )
 
 
+def _run_npm(
+    arguments: list[str],
+    directory: Path,
+    timeout: int,
+) -> tuple[int, str, str] | str:
+    npm = shutil.which("npm")
+    if not npm:
+        return "npm was not found. Install Node.js/npm and restart the local agent."
+
+    with tempfile.TemporaryDirectory(prefix="civibastion-npm-config-") as config_directory:
+        config_path = Path(config_directory)
+        user_config = config_path / "user.npmrc"
+        global_config = config_path / "global.npmrc"
+        user_config.touch(mode=0o600)
+        global_config.touch(mode=0o600)
+        environment = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(Path.home()),
+            "npm_config_registry": "https://registry.npmjs.org/",
+            "npm_config_userconfig": str(user_config),
+            "npm_config_globalconfig": str(global_config),
+            "npm_config_audit": "true",
+            "npm_config_fund": "false",
+            "npm_config_update_notifier": "false",
+        }
+        return _run_bounded([npm, *arguments], directory, environment, timeout)
+
+
 def _request_health(port: int, timeout: int) -> tuple[int, dict[str, str], bytes]:
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}/health",
@@ -126,28 +156,9 @@ def _result(check_id: str, status: str, summary: str, evidence: Any = None) -> d
 
 
 def _audit_dependencies(directory: Path, timeout: int) -> dict[str, Any]:
-    npm = shutil.which("npm")
-    if not npm:
-        return _result(
-            "dependency-advisories-v1",
-            "error",
-            "npm was not found. Install Node.js/npm and restart the local agent.",
-        )
-
-    environment = {
-        "PATH": os.environ.get("PATH", ""),
-        "HOME": str(Path.home()),
-        "npm_config_registry": "https://registry.npmjs.org/",
-        "npm_config_userconfig": os.devnull,
-        "npm_config_globalconfig": os.devnull,
-        "npm_config_audit": "true",
-        "npm_config_fund": "false",
-        "npm_config_update_notifier": "false",
-    }
-    execution = _run_bounded(
-        [npm, "audit", "--json", "--omit=dev", "--no-fund", "--no-progress"],
+    execution = _run_npm(
+        ["audit", "--json", "--omit=dev", "--no-fund", "--no-progress"],
         directory,
-        environment,
         timeout,
     )
     if isinstance(execution, str):
@@ -187,9 +198,7 @@ def _audit_dependencies(directory: Path, timeout: int) -> dict[str, Any]:
                 "npm audit returned an invalid vulnerability count.",
             )
         counts[severity] = count
-    total = sum(
-        counts.values()
-    )
+    total = sum(counts.values())
     vulnerabilities = audit.get("vulnerabilities", {})
     if not isinstance(vulnerabilities, dict):
         return _result("dependency-advisories-v1", "error", "npm audit findings are malformed.")
@@ -233,21 +242,8 @@ def _audit_dependencies(directory: Path, timeout: int) -> dict[str, Any]:
 
 
 def _generate_sbom(directory: Path, timeout: int, assessment_id: str) -> dict[str, Any]:
-    npm = shutil.which("npm")
-    if not npm:
-        return _result("cyclonedx-sbom-v1", "error", "npm was not found.")
-
-    environment = {
-        "PATH": os.environ.get("PATH", ""),
-        "HOME": str(Path.home()),
-        "npm_config_registry": "https://registry.npmjs.org/",
-        "npm_config_userconfig": os.devnull,
-        "npm_config_globalconfig": os.devnull,
-        "npm_config_update_notifier": "false",
-    }
-    execution = _run_bounded(
+    execution = _run_npm(
         [
-            npm,
             "sbom",
             "--package-lock-only",
             "--sbom-format",
@@ -255,7 +251,6 @@ def _generate_sbom(directory: Path, timeout: int, assessment_id: str) -> dict[st
             "--omit=dev",
         ],
         directory,
-        environment,
         timeout,
     )
     if isinstance(execution, str):
