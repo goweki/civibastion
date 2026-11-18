@@ -1,0 +1,9 @@
+{
+  "name": "civibastion-demo-target-baseline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated baseline fixture for CiviBastion's local profile demo",
+  "dependencies": {
+    "express": "4.17.1"
+  }
+}
