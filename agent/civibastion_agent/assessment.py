@@ -9,7 +9,12 @@ from typing import Any
 
 from . import __version__
 from .profile import VARIANTS, load_profile
-from .report import new_assessment_id, sign_report, utc_now
+from .report import (
+    ensure_private_directory,
+    new_assessment_id,
+    sign_report,
+    utc_now,
+)
 
 
 MAX_OUTPUT_BYTES = 1_048_576
@@ -201,9 +206,11 @@ def _generate_sbom(directory: Path, timeout: int, assessment_id: str) -> dict[st
         return _result("cyclonedx-sbom-v1", "error", "SBOM did not contain a components list.")
 
     report_dir = Path.home() / ".civibastion-demo" / "reports"
-    report_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ensure_private_directory(report_dir)
     sbom_path = report_dir / f"{assessment_id}.cdx.json"
-    sbom_path.write_text(json.dumps(sbom, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    descriptor = os.open(sbom_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as sbom_file:
+        json.dump(sbom, sbom_file, sort_keys=True, separators=(",", ":"))
     return _result(
         "cyclonedx-sbom-v1",
         "pass",
@@ -232,11 +239,17 @@ def run_assessment(variant: str) -> dict[str, Any]:
             profile["limits"]["requestTimeoutSeconds"],
         )
         payload = json.loads(body)
+        mode_matches = payload.get("mode") == variant
+        health_ok = status_code == 200 and payload.get("status") == "ok" and mode_matches
         checks.append(
             _result(
                 "service-health-v1",
-                "pass" if status_code == 200 and payload.get("status") == "ok" else "fail",
-                f"Health endpoint returned HTTP {status_code}.",
+                "pass" if health_ok else "fail",
+                (
+                    f"Health endpoint returned HTTP {status_code} for the expected {variant} target."
+                    if health_ok
+                    else f"Health endpoint returned HTTP {status_code} or the target variant did not match."
+                ),
                 {"path": "/health", "targetMode": payload.get("mode")},
             )
         )

@@ -9,18 +9,20 @@ const messages = {
   en: {
     about: "Our purpose",
     how: "How it works",
+    demo: "Try local demo",
     signIn: "Sign in",
     getStarted: "Get started",
   },
   sw: {
     about: "Kuhusu sisi",
     how: "Jinsi inavyofanya kazi",
+    demo: "Jaribu mfano wa ndani",
     signIn: "Ingia",
     getStarted: "Anza",
   },
 } satisfies Record<
   Locale,
-  { about: string; how: string; signIn: string; getStarted: string }
+  { about: string; how: string; demo: string; signIn: string; getStarted: string }
 >;
 
 type SiteHeaderProps = {
@@ -42,6 +44,9 @@ export function SiteHeader({ locale }: SiteHeaderProps) {
         >
           <Link className="transition-colors hover:text-foreground" href={`/${locale}/how-it-works`}>
             {copy.how}
+          </Link>
+          <Link className="transition-colors hover:text-foreground" href={`/${locale}/demo`}>
+            {copy.demo}
           </Link>
           <Link className="transition-colors hover:text-foreground" href={`/${locale}/about`}>
             {copy.about}

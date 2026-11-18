@@ -1,5 +1,6 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Lock, Thread
 from typing import Any
 
 from . import __version__
@@ -13,6 +14,7 @@ AGENT_HOST = "127.0.0.1"
 AGENT_PORT = 8785
 MAX_REQUEST_BYTES = 1_048_576
 ALLOWED_VARIANTS = {"baseline", "patched"}
+ASSESSMENT_LOCK = Lock()
 
 
 class AgentHandler(BaseHTTPRequestHandler):
@@ -53,13 +55,19 @@ class AgentHandler(BaseHTTPRequestHandler):
                 if variant not in ALLOWED_VARIANTS:
                     self._send_json(400, {"error": "Unsupported demo target variant."})
                     return
-                self._send_json(200, {"report": run_assessment(variant)})
+                if not ASSESSMENT_LOCK.acquire(blocking=False):
+                    self._send_json(429, {"error": "A demo assessment is already running."})
+                    return
+                try:
+                    self._send_json(200, {"report": run_assessment(variant)})
+                finally:
+                    ASSESSMENT_LOCK.release()
                 return
 
             self._send_json(200, verify_report(body.get("report")))
         except (ValueError, RuntimeError) as error:
             self._send_json(400, {"error": str(error)})
-        except Exception as error:
+        except OSError as error:
             self._send_json(500, {"error": f"Local agent failed: {error}"})
 
     def _read_json(self) -> dict[str, Any]:
@@ -97,29 +105,26 @@ class LocalAgentServer(ThreadingHTTPServer):
 
 def main() -> None:
     load_profile()
-    targets = [
-        DemoTargetServer(8786, "baseline"),
-        DemoTargetServer(8787, "patched"),
-    ]
-    for target in targets:
-        target_thread = __import__("threading").Thread(
-            target=target.serve_forever,
-            daemon=True,
-        )
-        target_thread.start()
-
-    server = LocalAgentServer((AGENT_HOST, AGENT_PORT), AgentHandler)
-    print(
-        f"CiviBastion local demo agent ready at http://{AGENT_HOST}:{AGENT_PORT} "
-        f"(profile {PROFILE_ID}; sample targets only)",
-        flush=True,
-    )
+    targets: list[DemoTargetServer] = []
+    server: LocalAgentServer | None = None
     try:
+        for port, mode in ((8786, "baseline"), (8787, "patched")):
+            target = DemoTargetServer(port, mode)
+            targets.append(target)
+            Thread(target=target.serve_forever, daemon=True).start()
+
+        server = LocalAgentServer((AGENT_HOST, AGENT_PORT), AgentHandler)
+        print(
+            f"CiviBastion local demo agent ready at http://{AGENT_HOST}:{AGENT_PORT} "
+            f"(profile {PROFILE_ID}; sample targets only)",
+            flush=True,
+        )
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
+        if server is not None:
+            server.server_close()
         for target in targets:
             target.shutdown()
             target.server_close()

@@ -9,7 +9,7 @@ const messages = {
     eyebrow: "A clear, local-first workflow",
     title: "Know what runs. Check what matters. Keep the evidence.",
     intro:
-      "CiviBastion connects a local assessment agent with an understandable web console. Your organization approves the scope and controls what is shared.",
+      "The planned workflow connects an approved profile to a local agent and a clear report. The current prototype is narrower: try a fixed profile against the bundled demo service; customer enrollment and deployment assessments are not shipped yet.",
     steps: [
       {
         title: "Connect your environment",
@@ -25,6 +25,7 @@ const messages = {
       },
     ],
     safeguardsTitle: "Designed to keep your organization in control",
+    demoLink: "Open the working local demo",
     safeguards: [
       "The agent initiates outbound communication; the control plane does not open arbitrary connections into your environment.",
       "Assessment tasks map to predefined operations—not arbitrary commands.",
@@ -37,7 +38,7 @@ const messages = {
     eyebrow: "Mtiririko wa kazi ulio wazi na wa ndani",
     title: "Jua kinachoendeshwa. Kagua kilicho muhimu. Hifadhi ushahidi.",
     intro:
-      "CiviBastion huunganisha wakala wa ukaguzi wa ndani na dashibodi inayoeleweka. Shirika lako huidhinisha wigo na kudhibiti taarifa zinazoshirikiwa.",
+      "Mtiririko uliopangwa huunganisha wasifu ulioidhinishwa na wakala wa ndani pamoja na ripoti iliyo wazi. Mfano uliopo ni mdogo zaidi: jaribu wasifu maalum kwenye huduma ya majaribio; usajili wa wateja na tathmini za mifumo yao bado hazijatolewa.",
     steps: [
       {
         title: "Unganisha mazingira yako",
@@ -53,6 +54,7 @@ const messages = {
       },
     ],
     safeguardsTitle: "Imeundwa ili shirika lako libaki na udhibiti",
+    demoLink: "Fungua mfano wa ndani unaofanya kazi",
     safeguards: [
       "Wakala huanzisha mawasiliano ya kutoka; mfumo mkuu hauanzishi miunganisho holela kuingia kwenye mazingira yako.",
       "Kazi za ukaguzi hutumia hatua zilizoainishwa—si amri holela.",
@@ -69,6 +71,7 @@ const messages = {
     intro: string;
     steps: { title: string; body: string }[];
     safeguardsTitle: string;
+    demoLink: string;
     safeguards: string[];
     cta: string;
     footnote: string;
@@ -133,6 +136,14 @@ export function HowItWorksPage({ locale }: HowItWorksPageProps) {
           ))}
         </ul>
       </section>
+
+      <Link
+        className="mt-8 inline-flex min-h-11 items-center gap-2 rounded-full border border-primary px-5 text-sm font-semibold text-primary hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        href={`/${locale}/demo`}
+      >
+        {copy.demoLink}
+        <ArrowRight aria-hidden="true" className="size-4" />
+      </Link>
 
       <div className="mt-12 flex flex-col items-start gap-4">
         <Link

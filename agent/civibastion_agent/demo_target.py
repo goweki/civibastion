@@ -1,6 +1,5 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import Thread
 from typing import Any
 
 
@@ -40,13 +39,3 @@ class DemoTargetServer(ThreadingHTTPServer):
     def __init__(self, port: int, mode: str):
         super().__init__(("127.0.0.1", port), DemoTargetHandler)
         self.demo_mode = mode
-
-
-def start_targets() -> list[Thread]:
-    threads = []
-    for mode, port in (("baseline", 8786), ("patched", 8787)):
-        server = DemoTargetServer(port, mode)
-        thread = Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        threads.append(thread)
-    return threads

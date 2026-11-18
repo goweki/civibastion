@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import os
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,12 @@ KEY_PATH = DATA_DIR / "signing-key.pem"
 REPORT_DIR = DATA_DIR / "reports"
 
 
+def ensure_private_directory(path: Path) -> None:
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name == "posix" and stat.S_IMODE(path.stat().st_mode) & 0o077:
+        raise RuntimeError(f"Local results directory has unsafe permissions: {path}")
+
+
 def canonical_json(value: Any) -> bytes:
     return json.dumps(
         value,
@@ -30,8 +37,10 @@ def canonical_json(value: Any) -> bytes:
 
 
 def _private_key() -> Ed25519PrivateKey:
-    DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ensure_private_directory(DATA_DIR)
     if KEY_PATH.exists():
+        if os.name == "posix" and stat.S_IMODE(KEY_PATH.stat().st_mode) & 0o077:
+            raise RuntimeError("The local signing key must not be readable by group or other users.")
         try:
             loaded = serialization.load_pem_private_key(KEY_PATH.read_bytes(), password=None)
         except (OSError, ValueError, TypeError) as error:
@@ -68,9 +77,11 @@ def sign_report(content: dict[str, Any]) -> dict[str, Any]:
         "signature": base64.b64encode(key.sign(bytes.fromhex(digest))).decode("ascii"),
     }
 
-    REPORT_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ensure_private_directory(REPORT_DIR)
     report_path = REPORT_DIR / f"{report['assessmentId']}.json"
-    report_path.write_bytes(canonical_json(report))
+    descriptor = os.open(report_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as report_file:
+        report_file.write(canonical_json(report))
     return report
 
 

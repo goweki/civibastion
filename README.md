@@ -8,7 +8,7 @@ Google-based Auth.js sign-in using encrypted JWT sessions.
 
 ```bash
 npm install
-cp .env.example .env.local
+cp .env.template .env.local
 npm run dev
 ```
 
@@ -46,12 +46,56 @@ sessions. The session exposes the provider's stable user subject as `user.id`;
 application-level organization membership and user records still need to be
 implemented before connecting protected product data.
 
+## Try the local assessment demo
+
+The demo is a local-only prototype for a bundled sample service. It runs one
+versioned profile against a baseline and a patched variant, checks the live
+`/health` response and required security headers, runs npm's dependency audit,
+generates a CycloneDX SBOM, and creates a locally signed report. It does not
+assess arbitrary hosts, container images, or AI model behavior.
+
+Prepare the isolated sample dependencies:
+
+```bash
+npm install --ignore-scripts --no-audit --no-fund --prefix examples/demo-target/baseline
+npm install --ignore-scripts --no-audit --no-fund --prefix examples/demo-target/patched
+```
+
+In a separate terminal, install and start the local Python agent:
+
+```bash
+python3 -m venv .venv-agent
+source .venv-agent/bin/activate
+python -m pip install -e ./agent
+civibastion-demo-agent
+```
+
+Then start the web app with `npm run dev` and open
+[http://localhost:3000/en/demo](http://localhost:3000/en/demo). The agent and
+sample services bind to loopback only. No Docker socket or customer credentials
+are used. Assessment JSON, CycloneDX files, and the private demo signing key
+are kept under `~/.civibastion-demo/`; protect that directory and remove it
+when you want to delete the demo's local data. The demo signing key is not a
+production organization key, and the demo report does not prove organizational
+identity.
+
+This prototype currently uses npm's audit database rather than the planned
+Trivy/Syft/OSV-Scanner workflow. Its dependency check is not a container-image
+scan. Do not present this narrow sample as a completed customer deployment
+assessment.
+
 ## Quality checks
 
 ```bash
 npm run lint
 npx tsc --noEmit
 npm run build
+```
+
+Agent tests:
+
+```bash
+python -m unittest discover -s agent/tests -t agent
 ```
 
 ## Project documents

@@ -21,17 +21,18 @@ const messages = {
       "Practical tools to assess, maintain, and understand AI infrastructure—without giving up control of it.",
     primary: "See how it works",
     secondary: "Get started",
+    demo: "Try the working local demo",
     note: "Designed for small teams, community organizations, and independent operators.",
     proofLabel: "A clearer path to responsible AI operations",
-    localTitle: "Checks run close to your systems",
+    localTitle: "A first local assessment profile",
     localBody:
-      "A local agent performs approved assessments in your environment. You decide what information leaves it.",
-    evidenceTitle: "Findings come with context",
+      "The working demo checks a bundled sample service. Assessing customer deployments is planned, not shipped.",
+    evidenceTitle: "Run prescribed checks",
     evidenceBody:
-      "See what was checked, what needs attention, and what remains uncertain—in language your team can use.",
-    recordTitle: "Evidence you can verify",
+      "The demo runs fixed health, response-header, dependency-advisory, and software-inventory checks.",
+    recordTitle: "Verify a demo report",
     recordBody:
-      "Create portable, signed assessment records that show what happened without making claims of perfect security.",
+      "Download and verify a locally signed report. Its demo key does not establish an organization's identity.",
     sectionEyebrow: "Built around your agency",
     sectionTitle: "Security should not require a specialist team.",
     sectionBody:
@@ -56,17 +57,18 @@ const messages = {
       "Zana za vitendo za kutathmini, kutunza na kuelewa miundombinu ya AI—bila kupoteza udhibiti wake.",
     primary: "Angalia jinsi inavyofanya kazi",
     secondary: "Anza",
+    demo: "Jaribu mfano wa ndani unaofanya kazi",
     note: "Imeundwa kwa timu ndogo, mashirika ya jamii na wanaoendesha mifumo yao wenyewe.",
     proofLabel: "Njia iliyo wazi zaidi ya kuendesha AI kwa uwajibikaji",
-    localTitle: "Ukaguzi hufanyika karibu na mifumo yako",
+    localTitle: "Wasifu wa kwanza wa ukaguzi wa ndani",
     localBody:
-      "Wakala wa ndani hufanya ukaguzi ulioidhinishwa kwenye mazingira yako. Unaamua taarifa gani zitatoka.",
-    evidenceTitle: "Matokeo yana maelezo",
+      "Mfano unaofanya kazi hukagua huduma ya majaribio iliyojumuishwa. Ukaguzi wa mifumo ya wateja bado umepangwa, haujatolewa.",
+    evidenceTitle: "Endesha ukaguzi uliopangwa",
     evidenceBody:
-      "Ona kilichokaguliwa, kinachohitaji uangalizi na kisicho na uhakika—kwa lugha ambayo timu yako inaweza kutumia.",
-    recordTitle: "Ushahidi unaoweza kuthibitisha",
+      "Mfano huendesha ukaguzi maalum wa afya, vichwa vya majibu, arifa za utegemezi na orodha ya programu.",
+    recordTitle: "Thibitisha ripoti ya mfano",
     recordBody:
-      "Tengeneza rekodi za ukaguzi zinazobebeka na kusainiwa, zinazoonyesha kilichofanyika bila kudai usalama kamili.",
+      "Pakua na uthibitishe ripoti iliyosainiwa ndani. Ufunguo wa mfano hauthibitishi utambulisho wa shirika.",
     sectionEyebrow: "Udhibiti wako kwanza",
     sectionTitle: "Usalama haupaswi kuhitaji timu ya wataalamu.",
     sectionBody:
@@ -92,6 +94,7 @@ const messages = {
     intro: string;
     primary: string;
     secondary: string;
+    demo: string;
     note: string;
     proofLabel: string;
     localTitle: string;
@@ -156,6 +159,12 @@ export function HomePage({ locale }: HomePageProps) {
                 {copy.secondary}
               </Link>
             </div>
+            <Link
+              className="mt-4 inline-flex min-h-10 items-center text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              href={`/${locale}/demo`}
+            >
+              {copy.demo}
+            </Link>
             <p className="mt-5 max-w-lg text-sm leading-6 text-muted-foreground">
               {copy.note}
             </p>

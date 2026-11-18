@@ -31,11 +31,19 @@ def load_profile() -> dict[str, Any]:
         raise RuntimeError(f"Could not load the bundled assessment profile: {error}") from error
 
     checks = profile.get("checks")
+    limits = profile.get("limits")
     if (
         profile.get("id") != PROFILE_ID
+        or profile.get("targetKind") != "bundled-demo-service"
         or not isinstance(checks, list)
         or not checks
-        or any(check not in ALLOWED_CHECKS for check in checks)
+        or any(not isinstance(check, str) or check not in ALLOWED_CHECKS for check in checks)
+        or not isinstance(limits, dict)
+        or not isinstance(limits.get("requestTimeoutSeconds"), int)
+        or not 1 <= limits["requestTimeoutSeconds"] <= 10
+        or not isinstance(limits.get("scannerTimeoutSeconds"), int)
+        or not 1 <= limits["scannerTimeoutSeconds"] <= 120
+        or limits.get("maxOutputBytes") != 1_048_576
     ):
         raise RuntimeError("The bundled assessment profile is invalid or contains an unapproved check.")
 
